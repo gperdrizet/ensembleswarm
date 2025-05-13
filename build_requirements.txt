@@ -1,0 +1,8 @@
+h5py
+pandas
+scikit-learn
+hatchling
+twine
+build
+coverage
+flake8

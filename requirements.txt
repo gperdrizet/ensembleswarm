@@ -1,0 +1,11 @@
+ensembleset
+h5py
+pandas
+scikit-learn
+ipykernel
+matplotlib
+hatchling
+twine
+build
+coverage
+flake8
