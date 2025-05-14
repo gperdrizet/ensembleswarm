@@ -19,7 +19,8 @@ class TestSwarm(unittest.TestCase):
         '''Dummy swarm instance for tests.'''
 
         # Clear data directory
-        rmtree('data')
+        if os.path.isdir('data'):
+            rmtree('data')
 
         # Ensembleset parameters
         self.n_datasets = 3
