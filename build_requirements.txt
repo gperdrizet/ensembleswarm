@@ -6,3 +6,7 @@ twine
 build
 coverage
 flake8
+ensembleset
+xgboost
+catboost
+lightgbm
