@@ -15,8 +15,15 @@ dependencies = [
   "h5py",
   "numpy",
   "pandas",
-  "scikit-learn"
+  "scikit-learn",
+  "xgboost",
+  "catboost",
+  "lightgbm"
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["ensembleswarm"]
+
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
