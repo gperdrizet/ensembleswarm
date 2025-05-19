@@ -4,4 +4,4 @@ __pycache__
 .coverage
 catboost_info
 dist
-data
+ensembleset_data

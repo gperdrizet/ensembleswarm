@@ -12,7 +12,7 @@ from sklearn.ensemble import AdaBoostRegressor
 from sklearn.linear_model import SGDRegressor
 from xgboost import XGBRegressor
 from catboost import CatBoostRegressor
-from lightgbm import LGBMRegressor
+#from lightgbm import LGBMRegressor
 
 REGRESSOR_JOBS = -1
 
@@ -20,18 +20,18 @@ MODELS={
     'Linear regression': LinearRegression(),
     'Quantile regression': QuantileRegressor(),
     'Nearest Neighbors':KNeighborsRegressor(n_jobs=REGRESSOR_JOBS),
-    'Linear SVM':LinearSVR(max_iter=1000),
+    'Linear SVM':LinearSVR(max_iter=10000),
     'RBF SVM':SVR(kernel='rbf'),
     'Polynomial SVM':SVR(kernel='poly'),
     'Gaussian Process':GaussianProcessRegressor(),
     'Decision Tree':DecisionTreeRegressor(),
     'Random Forest':RandomForestRegressor(n_jobs=REGRESSOR_JOBS),
-    'Neural Net':MLPRegressor(),
+    'Neural Net':MLPRegressor(max_iter=1000),
     'AdaBoost':AdaBoostRegressor(),
     'SGD':SGDRegressor(penalty='elasticnet'),
     'XGBoost':XGBRegressor(n_jobs=REGRESSOR_JOBS),
     'CatBoost':CatBoostRegressor(thread_count=REGRESSOR_JOBS),
-    'LightGBM':LGBMRegressor(n_jobs=REGRESSOR_JOBS)
+    #'LightGBM':LGBMRegressor(n_jobs=REGRESSOR_JOBS)
 }
 
 HYPERPARAMETERS={

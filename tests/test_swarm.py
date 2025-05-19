@@ -4,6 +4,7 @@ import os
 import glob
 import pickle
 import unittest
+from pathlib import Path
 from shutil import rmtree
 
 import pandas as pd
@@ -19,12 +20,12 @@ class TestSwarm(unittest.TestCase):
         '''Dummy swarm instance for tests.'''
 
         # Clear data directory
-        if os.path.isdir('data'):
-            rmtree('data')
+        if os.path.isdir('ensembleset_data'):
+            rmtree('ensembleset_data')
 
         # Ensembleset parameters
         self.n_datasets = 3
-        self.n_features = 2
+        self.frac_features = 0.1
         self.n_steps = 3
 
         # Load and prep calorie data for testing
@@ -46,7 +47,7 @@ class TestSwarm(unittest.TestCase):
         # Generate datasets
         self.dataset.make_datasets(
             n_datasets=self.n_datasets,
-            n_features=self.n_features,
+            frac_features=self.frac_features,
             n_steps=self.n_steps
         )
 
@@ -65,16 +66,20 @@ class TestSwarm(unittest.TestCase):
 
 
     def test_train_swarm(self):
-        '''Tests fitting of ensemble swarm'''
+        '''Tests fitting of ensemble swarm.'''
 
         self.swarm.train_swarm()
 
-        self.assertTrue(os.path.isdir('data/swarm'))
+        self.assertTrue(os.path.isdir('ensembleset_data/swarm'))
 
-        swarms=glob.glob('data/swarm/*pkl')
+        swarms=glob.glob('ensembleset_data/swarm/*pkl')
         self.assertEqual(len(swarms), self.n_datasets)
 
         with open(swarms[1], 'rb') as input_file:
             swarm = pickle.load(input_file)
 
         self.assertTrue(isinstance(swarm, dict))
+
+        self.swarm.train_output_model()
+
+        self.assertTrue(Path('ensembleset_data/swarm/output_model.pkl').is_file())
