@@ -7,8 +7,11 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.ensemble import HistGradientBoostingRegressor
 import ensembleswarm.regressors as regressors
+
+
 class Swarm:
     '''Class to hold ensemble model swarm.'''
 
@@ -64,10 +67,15 @@ class Swarm:
 
                     print(f' Fitting {model_name}')
 
-                    _=models[model_name].fit(
-                        np.array(hdf[f'train/{i}']),
-                        np.array(hdf['train/labels'])
-                    )
+                    try:
+                        _=models[model_name].fit(
+                            np.array(hdf[f'train/{i}']),
+                            np.array(hdf['train/labels'])
+                        )
+
+                    except ConvergenceWarning:
+                        print(f' Caught ConvergenceWarning while fitting {model_name}')
+                        models[model_name] = None
 
                 with open(f'ensembleset_data/swarm/{i}.pkl', 'wb') as output_file:
                     pickle.dump(models, output_file)
@@ -92,8 +100,10 @@ class Swarm:
 
                 for model_name, model in models.items():
 
-                    predictions = model.predict(np.array(hdf[f'test/{i}']))
-                    level_two_dataset[f'{i}_{model_name}']=predictions.flatten()
+                    if model is not None:
+
+                        predictions = model.predict(np.array(hdf[f'test/{i}']))
+                        level_two_dataset[f'{i}_{model_name}']=predictions.flatten()
 
             level_two_dataset['label'] = np.array(hdf['test/labels'])
             level_two_df = pd.DataFrame.from_dict(level_two_dataset)
