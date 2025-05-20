@@ -8,3 +8,4 @@ coverage
 xgboost
 catboost
 lightgbm
+pickleshare

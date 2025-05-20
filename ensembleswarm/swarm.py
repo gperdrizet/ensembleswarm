@@ -119,18 +119,18 @@ class Swarm:
                 model = work_unit['model']
                 features = work_unit['features']
                 labels = work_unit['labels']
-                print(f'\nTraining {model_name}, swarm {swarm}', end='')
+                print(f'Training {model_name}, swarm {swarm}', end='\r')
 
                 try:
-                    if model_name == 'Gaussian Process' and features.shape[0] > 10000:
-                        idx = np.random.randint(features.shape[0], size=10000)
+                    if model_name == 'Gaussian Process' and features.shape[0] > 5000:
+                        idx = np.random.randint(features.shape[0], size=5000)
                         features = features[idx, :]
                         labels = labels[idx]
 
                     _=model.fit(features, labels)
 
                 except ConvergenceWarning:
-                    print('\n Caught ConvergenceWarning while fitting '+
+                    print('\nCaught ConvergenceWarning while fitting '+
                           f'{model_name} in swarm {swarm}', end='')
                     model = None
 
