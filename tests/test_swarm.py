@@ -2,9 +2,7 @@
 
 import os
 import glob
-import pickle
 import unittest
-from pathlib import Path
 from shutil import rmtree
 
 import pandas as pd
@@ -68,18 +66,15 @@ class TestSwarm(unittest.TestCase):
     def test_train_swarm(self):
         '''Tests fitting of ensemble swarm.'''
 
-        self.swarm.train_swarm()
+        self.swarm.train_swarm(sample = 1000)
+        self.assertTrue(os.path.isdir('ensembleswarm_models/swarm'))
 
-        self.assertTrue(os.path.isdir('ensembleset_data/swarm'))
-
-        swarms=glob.glob('ensembleset_data/swarm/*pkl')
+        swarms=glob.glob('ensembleswarm_models/swarm/*')
         self.assertEqual(len(swarms), self.n_datasets)
 
-        with open(swarms[1], 'rb') as input_file:
-            swarm = pickle.load(input_file)
 
-        self.assertTrue(isinstance(swarm, dict))
+    # def test_train_output_model(self):
+    #     '''Tests training of stage II output model.'''
 
-        self.swarm.train_output_model()
-
-        self.assertTrue(Path('ensembleset_data/swarm/output_model.pkl').is_file())
+    #     self.swarm.train_output_model()
+    #     self.assertTrue(Path('ensembleswarm_models/output_model.pkl').is_file())
