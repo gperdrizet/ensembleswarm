@@ -8,9 +8,9 @@ from pathlib import Path
 
 import h5py
 import numpy as np
-# import pandas as pd
-from sklearn.exceptions import ConvergenceWarning
-# from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.experimental import enable_halving_search_cv # pylint: disable=W0611
+from sklearn.model_selection import HalvingRandomSearchCV
+from sklearn.exceptions import ConvergenceWarning, FitFailedWarning
 import ensembleswarm.regressors as regressors
 
 
@@ -35,6 +35,7 @@ class Swarm:
             self.swarm_directory = swarm_directory
 
         self.models = regressors.MODELS
+        self.hyperparameters = regressors.HYPERPARAMETERS
 
 
     def train_swarm(self, sample: int = None) -> None:
@@ -131,7 +132,7 @@ class Swarm:
 
                 except ConvergenceWarning:
                     print('\nCaught ConvergenceWarning while fitting '+
-                          f'{model_name} in swarm {swarm}', end='')
+                          f'{model_name} in swarm {swarm}')
                     model = None
 
                 model_file=f"{model_name.lower().replace(' ', '_')}.pkl"
@@ -146,35 +147,146 @@ class Swarm:
             time.sleep(1)
 
 
-    # def train_output_model(self):
-    #     '''Trains model to make predictions based on swarm output.'''
+    def optimize_swarm(self, sample: int = None) -> None:
+        '''Run per-model hyperparameter optimization using SciKit-learn's halving
+        random search with cross-validation.'''
 
-    #     with h5py.File(self.ensembleset, 'r') as hdf:
+        Path(f'{self.swarm_directory}/swarm').mkdir(parents=True, exist_ok=True)
 
-    #         num_datasets=len(list(hdf['train'].keys())) - 1
+        manager=Manager()
+        input_queue=manager.Queue(maxsize=5)
 
-    #         level_two_dataset={}
+        swarm_trainer_processes=[]
 
-    #         for i in range(num_datasets):
+        for i in range(cpu_count() - 2):
+            print(f'Starting worker {i}')
+            swarm_trainer_processes.append(
+                Process(
+                    target=self.optimize_model,
+                    args=(input_queue,)
+                )
+            )
 
-    #             with open(f'{self.swarm_directory}/swarm/{i}.pkl', 'rb') as input_file:
-    #                 models = pickle.load(input_file)
+        for swarm_trainer_process in swarm_trainer_processes:
+            swarm_trainer_process.start()
 
-    #             for model_name, model in models.items():
+        with h5py.File(self.ensembleset, 'r') as hdf:
+            num_datasets=len(list(hdf['train'].keys())) - 1
+            print(f"Training datasets: {list(hdf['train'].keys())})")
+            print(f'Have {num_datasets} sets of training features.')
 
-    #                 if model is not None:
+            for swarm in range(num_datasets):
 
-    #                     predictions = model.predict(np.array(hdf[f'test/{i}']))
-    #                     level_two_dataset[f'{i}_{model_name}']=predictions.flatten()
+                Path(f'{self.swarm_directory}/swarm/{swarm}').mkdir(parents=True, exist_ok=True)
 
-    #         level_two_dataset['label'] = np.array(hdf['test/labels'])
-    #         level_two_df = pd.DataFrame.from_dict(level_two_dataset)
+                features = hdf[f'train/{swarm}'][:]
+                labels = hdf['train/labels'][:]
+                models = copy.deepcopy(self.models)
 
-    #         model = HistGradientBoostingRegressor()
-    #         _ = model.fit(level_two_df.drop('label', axis=1), level_two_df['label'])
+                for model_name, model in models.items():
 
-    #         with open(f'{self.swarm_directory}/output_model.pkl', 'wb') as output_file:
-    #             pickle.dump(model, output_file)
+                    if sample is not None:
+                        idx = np.random.randint(np.array(features).shape[0], size=sample)
+                        features = features[idx, :]
+                        labels = labels[idx]
+
+                    work_unit = {
+                        'swarm': swarm,
+                        'model_name': model_name,
+                        'model': model,
+                        'features': features,
+                        'labels': labels,
+                        'hyperparameters': self.hyperparameters[model_name]
+                    }
+
+                    input_queue.put(work_unit)
+
+        for swarm_trainer_process in swarm_trainer_processes:
+            input_queue.put({'swarm': 'Done'})
+
+        for swarm_trainer_process in swarm_trainer_processes:
+            swarm_trainer_process.join()
+            swarm_trainer_process.close()
+
+        manager.shutdown()
+
+
+    def optimize_model(self, input_queue) -> None:
+        '''Optimizes an individual swarm model.'''
+
+        # Main loop
+        while True:
+
+            # Get next job from input
+            work_unit = input_queue.get()
+
+            # Unpack the workunit
+            swarm = work_unit['swarm']
+
+            if swarm == 'Done':
+                return
+
+            else:
+                model_name = work_unit['model_name']
+                model = work_unit['model']
+                features = work_unit['features']
+                labels = work_unit['labels']
+                hyperparameters = work_unit['hyperparameters']
+
+                model_file=f"{model_name.lower().replace(' ', '_')}.pkl"
+                hyperparameter_file=f"{model_name.lower().replace(' ', '_')}_hyperparameters.pkl"
+
+                if Path(model_file).is_file() and Path(hyperparameter_file).is_file():
+                    return
+
+                else:
+
+                    print(f'Optimizing {model_name}, ensemble {swarm}', end='\r')
+
+                    try:
+                        if model_name == 'Gaussian Process' and features.shape[0] > 5000:
+                            idx = np.random.randint(features.shape[0], size=5000)
+                            features = features[idx, :]
+                            labels = labels[idx]
+
+                        search = HalvingRandomSearchCV(
+                            model,
+                            hyperparameters,
+                            scoring='neg_root_mean_squared_error'
+                        )
+
+                        search.fit(features, labels)
+                        model=search.best_estimator_
+                        hyperparameters=search.best_params_
+
+                    except ConvergenceWarning:
+                        print('\nCaught ConvergenceWarning while fitting '+
+                            f'{model_name} in ensemble {swarm}')
+                        model = None
+
+                    except FitFailedWarning:
+                        print('\nCaught FitFailedWarning while optimizing '+
+                            f'{model_name} in ensemble {swarm}')
+
+                    except UserWarning:
+                        print('\nCaught UserWarning while optimizing '+
+                            f'{model_name} in ensemble {swarm}')
+
+                    with open(
+                        f'{self.swarm_directory}/swarm/{swarm}/{model_file}',
+                        'wb'
+                    ) as output_file:
+
+                        pickle.dump(model, output_file)
+
+                    with open(
+                        f'{self.swarm_directory}/swarm/{swarm}/{hyperparameter_file}',
+                        'wb'
+                    ) as output_file:
+
+                        pickle.dump(hyperparameters, output_file)
+
+            time.sleep(1)
 
 
     def check_argument_types(self,
