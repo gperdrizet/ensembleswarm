@@ -6,4 +6,6 @@ catboost_info
 dist
 ensembleset_data
 ensembleswarm_models
+ensemblesets
+swarms
 logs

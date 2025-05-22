@@ -1,5 +1,6 @@
 '''Creates and trains a swarm of level II regression ensembles.'''
 
+import threading
 import logging
 import time
 import pickle
@@ -178,6 +179,9 @@ class Swarm:
 
                 for model_name, model in models.items():
 
+                    time_thread = ElapsedTimeThread(model_name, ensemble, num_datasets)
+                    time_thread.start()
+
                     if sample is not None:
                         idx = np.random.randint(np.array(features).shape[0], size=sample)
                         features = features[idx, :]
@@ -193,6 +197,9 @@ class Swarm:
                         labels,
                         hyperparameters
                     )
+
+                    time_thread.stop()
+                    time_thread.join()
 
 
     def optimize_model(
@@ -271,8 +278,13 @@ class Swarm:
 
             except ValueError as e:
                 lines = str(e).splitlines()
-                print('\nCaught ValueError while optimizing '+
-                    f'{model_name} in ensemble {ensemble}: {lines[1]}, {lines[-1]}', end='')
+                optimize_model_logger.error(
+                    'Caught ValueError while optimizing %s in ensemble %s: %s, %s',
+                    model_name,
+                    ensemble + 1,
+                    lines[1], 
+                    lines[-1]
+                )
 
             with open(
                 f'{self.swarm_directory}/swarm/{ensemble}/{model_file}',
@@ -311,3 +323,58 @@ class Swarm:
             raise TypeError('Swarm directory path is not a string.')
 
         return check_pass
+
+
+class ElapsedTimeThread(threading.Thread):
+    '''Stoppable thread that prints the time elapsed'''
+
+    def __init__(self, model_name, ensemble, num_datasets):
+        super(ElapsedTimeThread, self).__init__()
+        self._stop_event = threading.Event()
+        self.model_name = model_name
+        self.ensemble = ensemble
+        self.num_datasets = num_datasets
+
+    def stop(self):
+        '''Stop method to stop timer printout.'''
+        self._stop_event.set()
+
+    def stopped(self):
+        '''Method to check the timer state.'''
+        return self._stop_event.is_set()
+
+    def run(self):
+        thread_start = time.time()
+
+        blank_len = 90
+
+        while not self.stopped():
+
+            elapsed_time=time.time()-thread_start
+
+            print(f'\r{" "*blank_len}', end='')
+
+            if elapsed_time < 60:
+
+                update = str(f'\rOptimizing {self.model_name}, ensemble {self.ensemble + 1} ' +
+                    f'of {self.num_datasets}, elapsed time: {elapsed_time:.1f} sec.')
+
+                print(update, end='')
+
+            if elapsed_time >= 60 and elapsed_time < 3600:
+
+                update = str(f'\rOptimizing {self.model_name}, ensemble {self.ensemble + 1} ' +
+                    f'of {self.num_datasets}, elapsed time: {(elapsed_time / 60):.1f} min.')
+
+                print(update, end='')
+
+            if elapsed_time > 3600:
+
+                update = str(f'\rOptimizing {self.model_name}, ensemble {self.ensemble + 1} ' +
+                    f'of {self.num_datasets}, elapsed time: {(elapsed_time / 3600):.1f} hr.')
+
+                print(update, end='')
+
+            blank_len = len(update) + 10
+
+            time.sleep(1)

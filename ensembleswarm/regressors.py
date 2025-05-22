@@ -98,7 +98,7 @@ HYPERPARAMETERS={
         'regressor__loss': ['epsilon_insensitive', 'squared_epsilon_insensitive'],
         'regressor__fit_intercept': [True, False],
         'regressor__intercept_scaling': uniform(loc=0, scale=10),
-        'regressor__max_iter': list(range(1000, 100000))
+        'regressor__max_iter': list(range(10000, 100000))
     },
     'RBF SVM':{
         'regressor__degree': list(range(1, 4)),
@@ -136,12 +136,12 @@ HYPERPARAMETERS={
         'regressor__ccp_alpha': loguniform(0.000001, 10.0)
     },
     'Neural Net':{
-        'regressor__hidden_layer_sizes': list(range(10, 20)),
+        'regressor__hidden_layer_sizes': list(range(50, 200)),
         'regressor__solver': ['lbfgs', 'sgd', 'adam'],
-        'regressor__alpha': loguniform(0.0001, 0.1),
+        'regressor__alpha': loguniform(0.00001, 0.001),
         'regressor__learning_rate': ['constant', 'invscaling', 'adaptive'],
-        'regressor__learning_rate_init': loguniform(0.00001, 0.01),
-        'regressor__max_iter': list(range(20000, 40000))
+        'regressor__learning_rate_init': loguniform(0.0001, 0.01),
+        'regressor__max_iter': list(range(100, 400))
     },
     'AdaBoost':{
         'regressor__n_estimators': list(range(5, 500)),
