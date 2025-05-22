@@ -1,8 +1,6 @@
 '''Creates and trains a swarm of level II regression ensembles.'''
 
-# import os
-# os.environ['OMP_NUM_THREADS'] = "1"
-
+import logging
 import time
 import pickle
 import copy
@@ -11,11 +9,13 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+from joblib import parallel_config
 from sklearn.experimental import enable_halving_search_cv # pylint: disable=W0611
 from sklearn.model_selection import HalvingRandomSearchCV
-from sklearn.exceptions import ConvergenceWarning, FitFailedWarning, UndefinedMetricWarning
+from sklearn.exceptions import ConvergenceWarning #, FitFailedWarning, UndefinedMetricWarning
 import ensembleswarm.regressors as regressors
 
+# logging.captureWarnings(True)
 
 class Swarm:
     '''Class to hold ensemble model swarm.'''
@@ -25,6 +25,9 @@ class Swarm:
             ensembleset: str = 'ensembleset_data/dataset.h5',
             swarm_directory: str = 'ensembleswarm_models'
         ):
+
+        logger = logging.getLogger(__name__)
+        logger.addHandler(logging.NullHandler())
 
         # Check user argument types
         type_check = self.check_argument_types(
@@ -43,6 +46,8 @@ class Swarm:
 
     def train_swarm(self, sample: int = None) -> None:
         '''Trains an instance of each regressor type on each member of the ensembleset.'''
+
+        train_swarm_logger = logging.getLogger(__name__ + '.train_swarm')
 
         Path(f'{self.swarm_directory}/swarm').mkdir(parents=True, exist_ok=True)
 
@@ -65,8 +70,8 @@ class Swarm:
 
         with h5py.File(self.ensembleset, 'r') as hdf:
             num_datasets=len(list(hdf['train'].keys())) - 1
-            print(f"Training datasets: {list(hdf['train'].keys())})")
-            print(f'Have {num_datasets} sets of training features.')
+            train_swarm_logger.info('Training datasets: %s', list(hdf['train'].keys()))
+            train_swarm_logger.info('Have %s sets of training features', num_datasets)
 
             for swarm in range(num_datasets):
 
@@ -154,12 +159,14 @@ class Swarm:
         '''Run per-model hyperparameter optimization using SciKit-learn's halving
         random search with cross-validation.'''
 
+        optimize_swarm_logger = logging.getLogger(__name__ + '.optimize_swarm')
+
         Path(f'{self.swarm_directory}/swarm').mkdir(parents=True, exist_ok=True)
 
         with h5py.File(self.ensembleset, 'r') as hdf:
             num_datasets=len(list(hdf['train'].keys())) - 1
-            print(f"Training datasets: {list(hdf['train'].keys())})")
-            print(f'Have {num_datasets} sets of training features.')
+            optimize_swarm_logger.info('Training datasets: %s', list(hdf['train'].keys()))
+            optimize_swarm_logger.info('Have %s sets of training features', num_datasets)
 
             for ensemble in range(num_datasets):
 
@@ -200,6 +207,8 @@ class Swarm:
 
         '''Optimizes an individual swarm model.'''
 
+        optimize_model_logger = logging.getLogger(__name__ + '.optimize_model')
+
         model_file=f"{model_name.lower().replace(' ', '_')}.pkl"
         hyperparameter_file=f"{model_name.lower().replace(' ', '_')}_hyperparameters.pkl"
 
@@ -212,12 +221,12 @@ class Swarm:
             ).is_file()
         ):
 
-            print(f'\nAlready optimized {model_name}, ensemble {ensemble}', end='')
+            optimize_model_logger.info('Already optimized %s, ensemble %s', model_name, ensemble)
             return
 
         else:
 
-            print(f'\nOptimizing {model_name}, ensemble {ensemble}', end='')
+            optimize_model_logger.info('Optimizing %s, ensemble %s', model_name, ensemble)
 
             try:
                 if model_name == 'Gaussian Process' and features.shape[0] > 5000:
@@ -233,30 +242,32 @@ class Swarm:
                     cv=3
                 )
 
-                search.fit(features, labels)
+                with parallel_config(backend='multiprocessing'):
+                    search.fit(features, labels)
+
                 model=search.best_estimator_
                 hyperparameters=search.best_params_
 
-            except ConvergenceWarning as e:
-                lines = str(e).splitlines()
-                print('\nCaught ConvergenceWarning while fitting '+
-                    f'{model_name} in ensemble {ensemble}: {lines[1]}, {lines[-1]}', end='')
-                model = None
+            # except ConvergenceWarning as e:
+            #     lines = str(e).splitlines()
+            #     print('\nCaught ConvergenceWarning while fitting '+
+            #         f'{model_name} in ensemble {ensemble}: {lines[1]}, {lines[-1]}', end='')
+            #     model = None
 
-            except FitFailedWarning as e:
-                lines = str(e).splitlines()
-                print('\nCaught FitFailedWarning while optimizing '+
-                    f'{model_name} in ensemble {ensemble}: {lines[1]}, {lines[-1]}', end='')
+            # except FitFailedWarning as e:
+            #     lines = str(e).splitlines()
+            #     print('\nCaught FitFailedWarning while optimizing '+
+            #         f'{model_name} in ensemble {ensemble}: {lines[1]}, {lines[-1]}', end='')
 
-            except UndefinedMetricWarning as e:
-                lines = str(e).splitlines()
-                print('\nCaught UndefinedMetricWarning while optimizing '+
-                    f'{model_name} in ensemble {ensemble}: {lines[1]}, {lines[-1]}', end='')
+            # except UndefinedMetricWarning as e:
+            #     lines = str(e).splitlines()
+            #     print('\nCaught UndefinedMetricWarning while optimizing '+
+            #         f'{model_name} in ensemble {ensemble}: {lines[1]}, {lines[-1]}', end='')
 
-            except UserWarning as e:
-                lines = str(e).splitlines()
-                print('\nCaught UserWarning while optimizing '+
-                    f'{model_name} in ensemble {ensemble}: {lines[0]}', end='')
+            # except UserWarning as e:
+            #     lines = str(e).splitlines()
+            #     print('\nCaught UserWarning while optimizing '+
+            #         f'{model_name} in ensemble {ensemble}: {lines[0]}', end='')
 
             except ValueError as e:
                 lines = str(e).splitlines()
