@@ -15,7 +15,7 @@ from sklearn.ensemble import AdaBoostRegressor
 from sklearn.linear_model import SGDRegressor
 from xgboost import XGBRegressor
 from catboost import CatBoostRegressor
-# from lightgbm import LGBMRegressor
+from lightgbm import LGBMRegressor
 
 MODELS={
     'Linear regression': Pipeline([
@@ -28,7 +28,7 @@ MODELS={
     ]),
     'Nearest Neighbors': Pipeline([
         ('scaler', StandardScaler()),
-        ('regressor', KNeighborsRegressor())
+        ('regressor', KNeighborsRegressor(n_jobs=1))
     ]),
     'Linear SVM': Pipeline([
         ('scaler', StandardScaler()),
@@ -42,7 +42,7 @@ MODELS={
         ('scaler', StandardScaler()),
         ('regressor', SVR(kernel='poly'))
     ]),
-    #'Gaussian Process':GaussianProcessRegressor(),
+    # 'Gaussian Process':GaussianProcessRegressor(),
     'Decision Tree': Pipeline([
         ('scaler', StandardScaler()),
         ('regressor', DecisionTreeRegressor())
@@ -53,7 +53,7 @@ MODELS={
     ]),
     'Neural Net': Pipeline([
         ('scaler', StandardScaler()),
-        ('regressor', MLPRegressor(early_stopping=True))
+        ('regressor', MLPRegressor())
     ]),
     'AdaBoost': Pipeline(
         [('scaler', StandardScaler()),
@@ -61,20 +61,20 @@ MODELS={
         ]),
     'SGD': Pipeline([
         ('scaler', StandardScaler()),
-        ('regressor', SGDRegressor(early_stopping=True))
+        ('regressor', SGDRegressor())
     ]),
     'XGBoost': Pipeline([
         ('scaler', StandardScaler()),
-        ('regressor', XGBRegressor())
+        ('regressor', XGBRegressor(n_jobs=1))
     ]),
     'CatBoost': Pipeline([
         ('scaler', StandardScaler()),
-        ('regressor', CatBoostRegressor(silent=True))
+        ('regressor', CatBoostRegressor(thread_count=1, silent=True))
     ]),
-    # 'LightGBM': Pipeline([
-    #     ('scaler', StandardScaler()),
-    #     ('regressor', LGBMRegressor(verbosity=-1))
-    # ])
+    'LightGBM': Pipeline([
+        ('scaler', StandardScaler()),
+        ('regressor', LGBMRegressor(verbosity=-1))
+    ])
 }
 
 HYPERPARAMETERS={
@@ -113,37 +113,38 @@ HYPERPARAMETERS={
         'regressor__epsilon': loguniform(0.001, 10.0),
         'regressor__max_iter': list(range(100, 100000))
     },
-    # 'Gaussian Process':{
-    #     'n_restarts_optimizer': [0]
-    # },
+    'Gaussian Process':{
+        'n_restarts_optimizer': [0]
+    },
     'Decision Tree':{
         'regressor__criterion': ['squared_error', 'friedman_mse', 'absolute_error', 'poisson'],
         'regressor__splitter': ['best', 'random'],
-        'regressor__max_depth': [None, 10, 50, 100, 200, 500],
+        'regressor__max_depth': [None, 10, 50, 100, 200],
         'regressor__min_samples_split': list(range(2, 20)),
         'regressor__min_samples_leaf': list(range(1, 100)),
-        'regressor__min_weight_fraction_leaf': uniform(loc=0.000001, scale=1.0),
+        'regressor__min_weight_fraction_leaf': uniform(loc=0, scale=0.5),
         'regressor__max_features': loguniform(0.001, 1.0)
     },
     'Random Forest':{
-        'regressor__n_estimators': list(range(50, 1000)),
+        'regressor__n_estimators': list(range(10, 100)),
         'regressor__criterion': ['squared_error', 'friedman_mse', 'absolute_error', 'poisson'],
         'regressor__min_samples_split': list(range(2, 20)),
         'regressor__min_samples_leaf': list(range(1, 100)),
-        'regressor__min_weight_fraction_leaf': loguniform(0.000001, 1.0),
+        'regressor__min_weight_fraction_leaf': uniform(loc=0, scale=0.5),
         'regressor__max_features': loguniform(0.001, 1.0),
         'regressor__min_impurity_decrease': loguniform(0.000001, 10.0),
         'regressor__ccp_alpha': loguniform(0.000001, 10.0)
     },
     'Neural Net':{
-        'regressor__hidden_layer_sizes': list(range(2, 200)),
+        'regressor__hidden_layer_sizes': list(range(2, 10)),
+        'regressor__solver': ['lbfgs', 'sgd', 'adam'],
         'regressor__alpha': loguniform(0.0001, 0.1),
         'regressor__learning_rate': ['constant', 'invscaling', 'adaptive'],
         'regressor__learning_rate_init': loguniform(0.00001, 0.01),
-        'regressor__max_iter': list(range(100, 10000))
+        'regressor__max_iter': list(range(1000, 10000))
     },
     'AdaBoost':{
-        'regressor__n_estimators': list(range(10, 1000)),
+        'regressor__n_estimators': list(range(5, 500)),
         'regressor__learning_rate': loguniform(0.001, 1.0)
     },
     'SGD':{
@@ -165,18 +166,18 @@ HYPERPARAMETERS={
     },
     'XGBoost':{
         'regressor__n_estimators': list(range(5, 100)),
-        'regressor__max_depth': list(range(2, 20)),
+        'regressor__max_depth': list(range(1, 20)),
         'regressor__subsample': uniform(loc=0.1, scale=0.9)
     },
     'CatBoost':{
         'regressor__n_estimators': list(range(50, 1000)),
-        'regressor__depth': list(range(2, 20)),
+        'regressor__depth': list(range(1, 16)),
         'regressor__model_size_reg': loguniform(1e-9, 1e-5)
     },
-    # 'LightGBM':{
-    #     'regressor__learning_rate': loguniform(0.0001, 1.0),
-    #     'regressor__n_estimators': list(range(50, 500)),
-    #     'regressor__max_depth': list(range(2, 20)),
-    #     'regressor__subsample': uniform(loc=0.1, scale=0.9)
-    # }
+    'LightGBM':{
+        'regressor__learning_rate': loguniform(0.0001, 1.0),
+        'regressor__n_estimators': list(range(50, 500)),
+        'regressor__max_depth': list(range(1, 20)),
+        'regressor__subsample': uniform(loc=0.1, scale=0.9)
+    }
 }
