@@ -151,10 +151,6 @@ class Swarm:
                     print(f'Training {model_name}, swarm {swarm}', end='\r')
 
                 try:
-                    # if model_name == 'Gaussian Process' and features.shape[0] > 5000:
-                    #     idx = np.random.randint(features.shape[0], size=5000)
-                    #     features = features[idx, :]
-                    #     labels = labels[idx]
 
                     _=model.fit(features, labels)
 
