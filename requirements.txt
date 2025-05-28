@@ -4,6 +4,7 @@ pandas
 scikit-learn
 ipykernel
 matplotlib
+seaborn
 coverage
 xgboost
 catboost

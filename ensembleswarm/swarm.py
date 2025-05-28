@@ -10,13 +10,12 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+import pandas as pd
 from joblib import parallel_config
-from sklearn.experimental import enable_halving_search_cv # pylint: disable=W0611
-from sklearn.model_selection import HalvingRandomSearchCV
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.exceptions import ConvergenceWarning #, FitFailedWarning, UndefinedMetricWarning
 import ensembleswarm.regressors as regressors
 
-# logging.captureWarnings(True)
 
 class Swarm:
     '''Class to hold ensemble model swarm.'''
@@ -43,9 +42,10 @@ class Swarm:
 
         self.models = regressors.MODELS
         self.hyperparameters = regressors.HYPERPARAMETERS
+        self.all_core_regressors = regressors.ALL_CORE_REGRESSORS
 
 
-    def train_swarm(self, sample: int = None) -> None:
+    def train_swarm(self, model_types: list = None, sample: int = None) -> None:
         '''Trains an instance of each regressor type on each member of the ensembleset.'''
 
         train_swarm_logger = logging.getLogger(__name__ + '.train_swarm')
@@ -84,20 +84,32 @@ class Swarm:
 
                 for model_name, model in models.items():
 
-                    if sample is not None:
-                        idx = np.random.randint(np.array(features).shape[0], size=sample)
-                        features = features[idx, :]
-                        labels = labels[idx]
+                    if model_name in model_types:
 
-                    work_unit = {
-                        'swarm': swarm,
-                        'model_name': model_name,
-                        'model': model,
-                        'features': features,
-                        'labels': labels
-                    }
+                        hyperparameters_file = (f'{self.swarm_directory}/swarm/{swarm}' +
+                            f"/{model_name.replace(' ', '_').lower()}_hyperparameters.pkl")
 
-                    input_queue.put(work_unit)
+                        hyperparameters = None
+
+                        if Path(hyperparameters_file).is_file():
+                            with open(hyperparameters_file, 'rb') as input_file:
+                                hyperparameters = pickle.load(input_file)
+
+                        if sample is not None:
+                            idx = np.random.randint(np.array(features).shape[0], size=sample)
+                            features = features[idx, :]
+                            labels = labels[idx]
+
+                        work_unit = {
+                            'swarm': swarm,
+                            'model_name': model_name,
+                            'model': model,
+                            'features': features,
+                            'labels': labels,
+                            'hyperparameters': hyperparameters
+                        }
+
+                        input_queue.put(work_unit)
 
         for swarm_trainer_process in swarm_trainer_processes:
             input_queue.put({'swarm': 'Done'})
@@ -129,13 +141,20 @@ class Swarm:
                 model = work_unit['model']
                 features = work_unit['features']
                 labels = work_unit['labels']
-                print(f'Training {model_name}, swarm {swarm}', end='\r')
+                hyperparameters = work_unit['hyperparameters']
+
+                if hyperparameters is not None:
+                    model.set_params(**hyperparameters)
+                    print(f'Training optimized {model_name}, swarm {swarm}', end='\r')
+
+                elif hyperparameters is None:
+                    print(f'Training {model_name}, swarm {swarm}', end='\r')
 
                 try:
-                    if model_name == 'Gaussian Process' and features.shape[0] > 5000:
-                        idx = np.random.randint(features.shape[0], size=5000)
-                        features = features[idx, :]
-                        labels = labels[idx]
+                    # if model_name == 'Gaussian Process' and features.shape[0] > 5000:
+                    #     idx = np.random.randint(features.shape[0], size=5000)
+                    #     features = features[idx, :]
+                    #     labels = labels[idx]
 
                     _=model.fit(features, labels)
 
@@ -156,13 +175,28 @@ class Swarm:
             time.sleep(1)
 
 
-    def optimize_swarm(self, sample: int = None) -> None:
+    def optimize_swarm(
+            self,
+            model_types: list = None,
+            sample: int = None,
+            default_n_iter: int = 256,
+            model_n_iter: dict = None,
+            cv: int = 3
+    ) -> None:
         '''Run per-model hyperparameter optimization using SciKit-learn's halving
         random search with cross-validation.'''
 
         optimize_swarm_logger = logging.getLogger(__name__ + '.optimize_swarm')
 
         Path(f'{self.swarm_directory}/swarm').mkdir(parents=True, exist_ok=True)
+
+        results = {
+            'ensemble': [],
+            'model': [],
+            'time': [],
+            'score_mean': [],
+            'score_std': []
+        }
 
         with h5py.File(self.ensembleset, 'r') as hdf:
             num_datasets=len(list(hdf['train'].keys())) - 1
@@ -179,27 +213,58 @@ class Swarm:
 
                 for model_name, model in models.items():
 
-                    time_thread = ElapsedTimeThread(model_name, ensemble, num_datasets)
-                    time_thread.start()
+                    if model_name in model_types or model_types is None:
 
-                    if sample is not None:
-                        idx = np.random.randint(np.array(features).shape[0], size=sample)
-                        features = features[idx, :]
-                        labels = labels[idx]
+                        start_time = time.time()
 
-                    hyperparameters=self.hyperparameters[model_name]
+                        time_thread = ElapsedTimeThread(model_name, ensemble, num_datasets)
+                        time_thread.start()
 
-                    self.optimize_model(
-                        ensemble,
-                        model_name,
-                        model,
-                        features,
-                        labels,
-                        hyperparameters
-                    )
+                        if sample is not None:
+                            idx = np.random.randint(np.array(features).shape[0], size=sample)
+                            features = features[idx, :]
+                            labels = labels[idx]
 
-                    time_thread.stop()
-                    time_thread.join()
+                        hyperparameters=self.hyperparameters[model_name]
+
+                        n_iter = default_n_iter
+
+                        if model_n_iter is not None:
+                            if model_name in model_n_iter.keys():
+                                n_iter = model_n_iter[model_name]
+
+                        if n_iter is not None:
+
+                            search_results = self.optimize_model(
+                                ensemble,
+                                model_name,
+                                model,
+                                features,
+                                labels,
+                                hyperparameters,
+                                n_iter,
+                                cv
+                            )
+
+                            if search_results is not None:
+
+                                result = pd.DataFrame(search_results.cv_results_)
+                                sorted_result = result.sort_values('rank_test_score')
+
+                                results['model'].append(model_name)
+                                results['ensemble'].append(ensemble)
+                                results['score_mean'].append(
+                                    -sorted_result['mean_test_score'].to_list()[0]
+                                )
+                                results['score_std'].append(
+                                    sorted_result['std_test_score'].to_list()[0]
+                                )
+                                results['time'].append(time.time() - start_time)
+
+                        time_thread.stop()
+                        time_thread.join()
+
+        return results
 
 
     def optimize_model(
@@ -209,72 +274,62 @@ class Swarm:
             model,
             features,
             labels,
-            hyperparameters
+            hyperparameters,
+            n_iter,
+            cv
     ) -> None:
 
         '''Optimizes an individual swarm model.'''
 
         optimize_model_logger = logging.getLogger(__name__ + '.optimize_model')
 
-        model_file=f"{model_name.lower().replace(' ', '_')}.pkl"
+        n_jobs = cpu_count() // 2
+
+        if model_name in self.all_core_regressors:
+            n_jobs = 1
+
         hyperparameter_file=f"{model_name.lower().replace(' ', '_')}_hyperparameters.pkl"
+        search_results_file=f"{model_name.lower().replace(' ', '_')}_optimization_results.pkl"
 
         if (
             Path(
-                f'{self.swarm_directory}/swarm/{ensemble}/{model_file}'
+                f'{self.swarm_directory}/swarm/{ensemble}/{hyperparameter_file}'
             ).is_file() and
             Path(
-                f'{self.swarm_directory}/swarm/{ensemble}/{hyperparameter_file}'
+                f'{self.swarm_directory}/swarm/{ensemble}/{search_results_file}'
             ).is_file()
         ):
 
             optimize_model_logger.info('Already optimized %s, ensemble %s', model_name, ensemble)
-            return
+            return None
 
         else:
 
-            optimize_model_logger.info('Optimizing %s, ensemble %s', model_name, ensemble)
+            optimize_model_logger.info(
+                'Optimizing %s, ensemble %s for %s iterations, with %s cv folds and n_jobs = %s',
+                model_name,
+                ensemble,
+                n_iter,
+                cv,
+                n_jobs
+            )
 
             try:
-                if model_name == 'Gaussian Process' and features.shape[0] > 5000:
-                    idx = np.random.randint(features.shape[0], size=5000)
-                    features = features[idx, :]
-                    labels = labels[idx]
 
-                search = HalvingRandomSearchCV(
+                search = RandomizedSearchCV(
                     model,
                     hyperparameters,
                     scoring='neg_root_mean_squared_error',
-                    n_jobs=-1,
-                    cv=3
+                    n_jobs=n_jobs,
+                    n_iter=n_iter,
+                    cv=cv
                 )
 
                 with parallel_config(backend='multiprocessing'):
                     search.fit(features, labels)
 
-                model=search.best_estimator_
-                hyperparameters=search.best_params_
-
-            # except ConvergenceWarning as e:
-            #     lines = str(e).splitlines()
-            #     print('\nCaught ConvergenceWarning while fitting '+
-            #         f'{model_name} in ensemble {ensemble}: {lines[1]}, {lines[-1]}', end='')
-            #     model = None
-
-            # except FitFailedWarning as e:
-            #     lines = str(e).splitlines()
-            #     print('\nCaught FitFailedWarning while optimizing '+
-            #         f'{model_name} in ensemble {ensemble}: {lines[1]}, {lines[-1]}', end='')
-
-            # except UndefinedMetricWarning as e:
-            #     lines = str(e).splitlines()
-            #     print('\nCaught UndefinedMetricWarning while optimizing '+
-            #         f'{model_name} in ensemble {ensemble}: {lines[1]}, {lines[-1]}', end='')
-
-            # except UserWarning as e:
-            #     lines = str(e).splitlines()
-            #     print('\nCaught UserWarning while optimizing '+
-            #         f'{model_name} in ensemble {ensemble}: {lines[0]}', end='')
+                model = search.best_estimator_
+                hyperparameters = search.best_params_
 
             except ValueError as e:
                 lines = str(e).splitlines()
@@ -282,16 +337,9 @@ class Swarm:
                     'Caught ValueError while optimizing %s in ensemble %s: %s, %s',
                     model_name,
                     ensemble + 1,
-                    lines[1], 
+                    lines[1],
                     lines[-1]
                 )
-
-            with open(
-                f'{self.swarm_directory}/swarm/{ensemble}/{model_file}',
-                'wb'
-            ) as output_file:
-
-                pickle.dump(model, output_file)
 
             with open(
                 f'{self.swarm_directory}/swarm/{ensemble}/{hyperparameter_file}',
@@ -299,6 +347,15 @@ class Swarm:
             ) as output_file:
 
                 pickle.dump(hyperparameters, output_file)
+
+            with open(
+                f'{self.swarm_directory}/swarm/{ensemble}/{search_results_file}',
+                'wb'
+            ) as output_file:
+
+                pickle.dump(search, output_file)
+
+            return search
 
 
     def check_argument_types(self,
@@ -354,27 +411,20 @@ class ElapsedTimeThread(threading.Thread):
 
             print(f'\r{" "*blank_len}', end='')
 
-            if elapsed_time < 60:
-
-                update = str(f'\rOptimizing {self.model_name}, ensemble {self.ensemble + 1} ' +
-                    f'of {self.num_datasets}, elapsed time: {elapsed_time:.1f} sec.')
-
-                print(update, end='')
+            update = str(f'\rOptimizing {self.model_name}, ensemble {self.ensemble + 1} ' +
+                    f'of {self.num_datasets}, elapsed time: {elapsed_time:.0f} sec.')
 
             if elapsed_time >= 60 and elapsed_time < 3600:
 
                 update = str(f'\rOptimizing {self.model_name}, ensemble {self.ensemble + 1} ' +
-                    f'of {self.num_datasets}, elapsed time: {(elapsed_time / 60):.1f} min.')
+                    f'of {self.num_datasets}, elapsed time: {(elapsed_time / 60):.2f} min.')
 
-                print(update, end='')
-
-            if elapsed_time > 3600:
+            elif elapsed_time > 3600:
 
                 update = str(f'\rOptimizing {self.model_name}, ensemble {self.ensemble + 1} ' +
-                    f'of {self.num_datasets}, elapsed time: {(elapsed_time / 3600):.1f} hr.')
+                    f'of {self.num_datasets}, elapsed time: {(elapsed_time / 3600):.2f} hr.')
 
-                print(update, end='')
-
+            print(update, end='')
             blank_len = len(update) + 10
 
             time.sleep(1)
