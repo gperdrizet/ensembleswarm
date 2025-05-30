@@ -1,8 +1,0 @@
-__pycache__
-.vscode
-.venv
-.coverage
-catboost_info
-dist
-ensembleset_data
-ensembleswarm_models
