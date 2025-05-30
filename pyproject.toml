@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ensembleswarm"
-version = "1.0-alpha.2"
+version = "1.0-alpha.3
 authors = [
   { name="George Perdrizet", email="george@perdrizet.org" },
 ]
