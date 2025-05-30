@@ -70,7 +70,7 @@ class Swarm:
         Path(f'{self.swarm_directory}/swarm').mkdir(parents=True, exist_ok=True)
 
         manager=Manager()
-        input_queue=manager.Queue(maxsize=5)
+        input_queue=manager.Queue()
 
         swarm_trainer_processes=[]
 
@@ -82,9 +82,6 @@ class Swarm:
                     args=(input_queue,)
                 )
             )
-
-        for swarm_trainer_process in swarm_trainer_processes:
-            swarm_trainer_process.start()
 
         with h5py.File(self.ensembleset, 'r') as hdf:
             num_datasets=len(list(hdf['train'].keys())) - 1
@@ -130,6 +127,9 @@ class Swarm:
                         model_name
                     )
                     input_queue.put(work_unit)
+
+        for swarm_trainer_process in swarm_trainer_processes:
+            swarm_trainer_process.start()
 
         for swarm_trainer_process in swarm_trainer_processes:
             input_queue.put({'swarm': 'Done'})
