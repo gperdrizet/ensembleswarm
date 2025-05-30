@@ -74,8 +74,8 @@ class Swarm:
 
         swarm_trainer_processes=[]
 
-        for i in range(int(cpu_count() / 2)):
-            print(f'Starting worker {i}')
+        for i in range(1): #range(int(cpu_count() / 2)):
+            train_swarm_logger.info('Starting worker %s', i)
             swarm_trainer_processes.append(
                 Process(
                     target=self.train_model,
@@ -124,6 +124,11 @@ class Swarm:
                         'hyperparameters': hyperparameters
                     }
 
+                    train_swarm_logger.info(
+                        'Submitting ensemble %s, %s model for training',
+                        swarm,
+                        model_name
+                    )
                     input_queue.put(work_unit)
 
         for swarm_trainer_process in swarm_trainer_processes:
@@ -269,10 +274,14 @@ class Swarm:
                             )
                             results['time'].append(time.time() - start_time)
 
-                        time_thread.stop()
-                        time_thread.join()
+                    time_thread.stop()
+                    time_thread.join()
 
-        return results
+        results_df = pd.DataFrame.from_dict(results)
+        results_df['efficiency_mean'] = results_df['score_mean'] / results_df['time']
+        results_df['efficiency_std'] = results_df['score_std'] / results_df['time']
+
+        return results_df
 
 
     def optimize_model(
@@ -404,10 +413,10 @@ class Swarm:
 
                         swarm_rmse['ensemble'].append(i)
                         swarm_rmse['model'].append(model_type)
-                        swarm_rmse['RMSLE'].append(rmse)
+                        swarm_rmse['RMSE'].append(rmse)
 
-            time_thread.stop()
-            time_thread.join()
+                    time_thread.stop()
+                    time_thread.join()
 
             level_two_dataset['label'] = np.array(hdf['test/labels'])
 

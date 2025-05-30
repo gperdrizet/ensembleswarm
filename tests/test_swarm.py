@@ -2,7 +2,9 @@
 
 import os
 import glob
+import logging
 import unittest
+from pathlib import Path
 from shutil import rmtree
 
 import pandas as pd
@@ -11,56 +13,62 @@ from sklearn.model_selection import train_test_split
 import ensembleset.dataset as ds
 from ensembleswarm.swarm import Swarm
 
+Path('tests/logs').mkdir(parents=True, exist_ok=True)
+logging.captureWarnings(True)
+logger = logging.getLogger()
+
+logging.basicConfig(
+    filename='tests/logs/test_swarm.log',
+    filemode='w',
+    level=logging.INFO,
+    format='%(levelname)s - %(name)s - %(message)s'
+)
+
+ENSEMBLESET_DIRECTORY = 'tests/ensemblesets'
+ENSEMBLESWARM_DIRECTORY = 'tests/ensembleswarm_models'
+
+# Ensembleset parameters
+N_DATASETS = 3
+FRAC_FEATURES = 0.1
+N_STEPS = 3
+
+# Load and prep calorie data for testing
+data_df = pd.read_csv('tests/calories.csv')
+data_df = data_df.sample(frac=0.01)
+data_df.drop('id', axis=1, inplace=True, errors='ignore')
+data_df = data_df.sample(n=100)
+train_df, test_df = train_test_split(data_df, test_size=0.5)
+train_df.reset_index(inplace=True, drop=True)
+test_df.reset_index(inplace=True, drop=True)
+
+# Set-up ensembleset
+dataset = ds.DataSet(
+    label='Calories',
+    train_data=train_df,
+    test_data=test_df,
+    string_features=['Sex'],
+    data_directory=ENSEMBLESET_DIRECTORY
+)
+
+# Generate datasets
+ENSEMBLESET_FILE = dataset.make_datasets(
+    n_datasets=N_DATASETS,
+    frac_features=FRAC_FEATURES,
+    n_steps=N_STEPS
+)
+
+
 class TestSwarm(unittest.TestCase):
     '''Tests for ensemble swarm class.'''
 
     def setUp(self):
         '''Dummy swarm instance for tests.'''
 
-        # Ensembleset parameters
-        self.n_datasets = 3
-        self.frac_features = 0.1
-        self.n_steps = 3
-
-        self.ensembleset_directory = 'tests/ensemblesets'
-        self.ensembleswarm_directory = 'tests/ensembleswarm_models'
-
-        # Clear data directories
-        if os.path.isdir(self.ensembleset_directory):
-            rmtree(self.ensembleset_directory)
-
-        # Clear data directories
-        if os.path.isdir(self.ensembleswarm_directory):
-            rmtree(self.ensembleswarm_directory)
-
-        # Load and prep calorie data for testing
-        data_df=pd.read_csv('tests/calories.csv')
-        data_df=data_df.sample(frac=0.01)
-        data_df.drop('id', axis=1, inplace=True, errors='ignore')
-        train_df, test_df=train_test_split(data_df, test_size=0.5)
-        train_df.reset_index(inplace=True, drop=True)
-        test_df.reset_index(inplace=True, drop=True)
-
-        # Set-up ensembleset
-        self.dataset = ds.DataSet(
-            label='Calories',
-            train_data=train_df,
-            test_data=test_df,
-            string_features=['Sex'],
-            data_directory=self.ensembleset_directory
-        )
-
-        # Generate datasets
-        self.ensembleset_file = self.dataset.make_datasets(
-            n_datasets=self.n_datasets,
-            frac_features=self.frac_features,
-            n_steps=self.n_steps
-        )
-
         # Initialize ensembleswarm
         self.swarm = Swarm(
-            ensembleset=f'{self.ensembleset_directory}/{self.ensembleset_file}',
-            swarm_directory=self.ensembleswarm_directory,
+            ensembleset=f'{ENSEMBLESET_DIRECTORY}/{ENSEMBLESET_FILE}',
+            swarm_directory=ENSEMBLESWARM_DIRECTORY,
+            model_types=['Linear regression']
         )
 
 
@@ -90,10 +98,10 @@ class TestSwarm(unittest.TestCase):
         '''Tests fitting of ensemble swarm.'''
 
         self.swarm.train_swarm(sample = 100)
-        self.assertTrue(os.path.isdir(f'{self.ensembleswarm_directory}/swarm'))
+        self.assertTrue(os.path.isdir(f'{ENSEMBLESWARM_DIRECTORY }/swarm'))
 
-        swarms=glob.glob(f'{self.ensembleswarm_directory}/swarm/*')
-        self.assertEqual(len(swarms), self.n_datasets)
+        swarms=glob.glob(f'{ENSEMBLESWARM_DIRECTORY }/swarm/*')
+        self.assertEqual(len(swarms), N_DATASETS)
 
 
     def test_d_swarm_predict(self):
